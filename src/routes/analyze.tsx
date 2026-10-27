@@ -396,7 +396,7 @@ function Answer({ text, onOpen }: { text: string; onOpen: OpenFn }) {
         const h = line.match(/^#{1,4}\s+(.*)/);
         const content = ((h ? h[1] : line) ?? "").split(/(\[[^\]\s]+:\d+(?:-\d+)?\]|\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
           const c = part.match(/^\[([^\]\s]+):(\d+)(?:-\d+)?\]$/);
-          if (c && c[1] && c[2]) return <button key={j} onClick={() => onOpen({ path: c[1], line: Number(c[2]) })} className="mx-0.5 rounded bg-muted px-1 font-mono text-xs text-primary hover:underline">{c[1].split("/").pop()}:{c[2]}</button>;
+          if (c && c[1] && c[2]) return <button key={j} onClick={() => onOpen({ path: c[1]!, line: Number(c[2]) })} className="mx-0.5 rounded bg-muted px-1 font-mono text-xs text-primary hover:underline">{c[1].split("/").pop()}:{c[2]}</button>;
           if (part.startsWith("**")) return <strong key={j}>{part.slice(2, -2)}</strong>;
           if (part.startsWith("`")) return <code key={j} className="rounded bg-muted px-1 font-mono text-xs">{part.slice(1, -1)}</code>;
           return part;
