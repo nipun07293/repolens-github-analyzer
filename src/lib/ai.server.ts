@@ -3,7 +3,7 @@ import { streamText } from "ai";
 
 /** One-shot Responses call through Lovable AI Gateway, streamed and consumed server-side. */
 export async function runResponses(instructions: string, prompt: string): Promise<string> {
-  const apiKey = process.env.LOVABLE_API_KEY;
+  const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured (missing key).");
   let runId: string | undefined;
   const provider = createOpenAI({

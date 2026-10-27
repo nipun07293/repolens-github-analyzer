@@ -40,7 +40,7 @@ export function parseRepoUrl(input: string): { owner: string; repo: string } | n
     s.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:\/.*)?$/) ??
     s.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
   if (!m) return null;
-  const [, owner, repo] = m;
+  const owner = m[1]!, repo = m[2]!;
   if (owner.startsWith(".") || repo.startsWith(".")) return null;
   return { owner, repo };
 }
@@ -90,15 +90,16 @@ export function extractSymbols(file: SourceFile): CodeSymbol[] {
   const lines = file.content.split("\n");
   const rules = RULES.filter((r) => r.lang.includes(lang));
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
     if (line.length > 400) continue;
     for (const r of rules) {
       const m = line.match(r.re);
       if (!m) continue;
       const name = m[r.name ?? 1];
       if (!name || KEYWORDS.has(name)) continue;
-      const detail = r.detail ? m[r.detail].toUpperCase() : undefined;
-      out.push({ name, kind: r.kind, path: file.path, line: i + 1, detail });
+      const sym: CodeSymbol = { name, kind: r.kind, path: file.path, line: i + 1 };
+      if (r.detail && m[r.detail]) sym.detail = m[r.detail]!.toUpperCase();
+      out.push(sym);
       break;
     }
   }
@@ -111,15 +112,15 @@ export function extractImports(file: SourceFile): string[] {
   const specs: string[] = [];
   const c = file.content;
   if (lang === "ts" || lang === "js") {
-    for (const m of c.matchAll(/(?:import|export)\s+(?:[^"'`;]*?\s+from\s+)?["'`]([^"'`]+)["'`]/g)) specs.push(m[1]);
-    for (const m of c.matchAll(/(?:require|import)\(\s*["'`]([^"'`]+)["'`]\s*\)/g)) specs.push(m[1]);
+    for (const m of c.matchAll(/(?:import|export)\s+(?:[^"'`;]*?\s+from\s+)?["'`]([^"'`]+)["'`]/g)) specs.push(m[1]!);
+    for (const m of c.matchAll(/(?:require|import)\(\s*["'`]([^"'`]+)["'`]\s*\)/g)) specs.push(m[1]!);
   } else if (lang === "py") {
-    for (const m of c.matchAll(/^\s*from\s+([.\w]+)\s+import/gm)) specs.push(m[1]);
-    for (const m of c.matchAll(/^\s*import\s+([\w.]+)/gm)) specs.push(m[1]);
+    for (const m of c.matchAll(/^\s*from\s+([.\w]+)\s+import/gm)) specs.push(m[1]!);
+    for (const m of c.matchAll(/^\s*import\s+([\w.]+)/gm)) specs.push(m[1]!);
   } else if (lang === "java") {
-    for (const m of c.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+)\s*;/gm)) specs.push(m[1]);
+    for (const m of c.matchAll(/^\s*import\s+(?:static\s+)?([\w.]+)\s*;/gm)) specs.push(m[1]!);
   } else if (lang === "go") {
-    for (const m of c.matchAll(/"([\w./-]+)"/g)) specs.push(m[1]);
+    for (const m of c.matchAll(/"([\w./-]+)"/g)) specs.push(m[1]!);
   }
   return [...new Set(specs)];
 }
@@ -205,7 +206,7 @@ export function impactOf(target: string, edges: GraphEdge[], maxDepth = 6): Arra
   seen.set(target, { depth: 0, via: target });
   let head = 0;
   while (head < queue.length) {
-    const [node, d] = queue[head++];
+    const [node, d] = queue[head++]!;
     if (d >= maxDepth) continue;
     for (const dep of reverse.get(node) ?? []) {
       if (seen.has(dep)) continue;
@@ -277,7 +278,7 @@ export function detectFindings(file: SourceFile): Finding[] {
   const out: Finding[] = [];
   const lines = file.content.split("\n");
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i]!;
     if (line.length > 500) continue;
     for (const r of FINDING_RULES) {
       if (r.langs && !r.langs.includes(lang)) continue;
@@ -330,7 +331,7 @@ export function bm25Search(chunks: Chunk[], query: string, k = 8): Array<Chunk &
   const N = docs.length;
   const k1 = 1.4, b = 0.75;
   const scored = chunks.map((c, i) => {
-    const d = docs[i];
+    const d = docs[i]!;
     const tf = new Map<string, number>();
     for (const t of d) tf.set(t, (tf.get(t) ?? 0) + 1);
     let score = 0;
@@ -341,6 +342,7 @@ export function bm25Search(chunks: Chunk[], query: string, k = 8): Array<Chunk &
       score += idf * ((f * (k1 + 1)) / (f + k1 * (1 - b + (b * d.length) / avg)));
     }
     if (q.some((t) => c.path.toLowerCase().includes(t))) score *= 1.3;
+    if (isTestFile(c.path) && !q.includes("test")) score *= 0.6;
     return { ...c, score };
   });
   return scored.filter((c) => c.score > 0).sort((a, b) => b.score - a.score).slice(0, k);

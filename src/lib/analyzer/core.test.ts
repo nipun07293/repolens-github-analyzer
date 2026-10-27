@@ -23,7 +23,7 @@ describe("analyzer", () => {
 
   it("detects import cycles", () => {
     const { edges } = buildGraph([f("a.ts", "import './b'"), f("b.ts", "import './a'"), f("c.ts", "")]);
-    expect(findCycles(edges)[0].sort()).toEqual(["a.ts", "b.ts"]);
+    expect(findCycles(edges)[0]!.sort()).toEqual(["a.ts", "b.ts"]);
   });
 
   it("flags SQL concatenation as high severity", () => {
@@ -33,6 +33,6 @@ describe("analyzer", () => {
 
   it("ranks relevant chunk first", () => {
     const top = bm25Search(chunkFiles([f("auth.ts", "function verifyPassword(){}"), f("math.ts", "function add(){}")]), "where is password verified");
-    expect(top[0].path).toBe("auth.ts");
+    expect(top[0]!.path).toBe("auth.ts");
   });
 });
