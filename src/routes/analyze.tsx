@@ -354,9 +354,9 @@ function Ask({ s, a, onOpen }: { s: RepoSnapshot; a: A; onOpen: OpenFn }) {
     try {
       if (!chunks.length) throw new Error("No matching code found for those words. Try naming a feature, file or function.");
       const r = await ask({ data: { question: qText, repo: `${s.owner}/${s.repo}`, sha: s.sha, symbols: syms, chunks: chunks.map(({ path, start, end, text }) => ({ path, start, end, text })) } });
-      setHistory((h) => [{ ...h[0], answer: r.answer }, ...h.slice(1)]);
+      setHistory((h) => h.map((x, i) => (i === 0 ? { ...x, answer: r.answer } : x)));
     } catch (e) {
-      setHistory((h) => [{ ...h[0], error: (e as Error).message }, ...h.slice(1)]);
+      setHistory((h) => h.map((x, i) => (i === 0 ? { ...x, error: (e as Error).message } : x)));
     } finally {
       setBusy(false);
     }
