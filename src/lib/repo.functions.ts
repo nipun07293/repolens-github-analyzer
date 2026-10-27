@@ -45,7 +45,7 @@ async function pool<T, R>(items: T[], size: number, fn: (t: T) => Promise<R>): P
     Array.from({ length: Math.min(size, items.length) }, async () => {
       while (next < items.length) {
         const i = next++;
-        out[i] = await fn(items[i]);
+        out[i] = await fn(items[i]!);
       }
     }),
   );
@@ -88,11 +88,11 @@ export const analyzeRepo = createServerFn({ method: "POST" })
     const chosen = candidates.slice(0, MAX_FILES);
     const raw = (p: string) => fetch(`https://raw.githubusercontent.com/${owner}/${repo}/${sha}/${p.split("/").map(encodeURIComponent).join("/")}`).then((r) => (r.ok ? r.text() : ""));
     const contents = await pool(chosen, 12, (b) => raw(b.path));
-    const files = chosen.map((b, i) => ({ path: b.path, content: contents[i], size: b.size ?? contents[i].length })).filter((f) => f.content);
+    const files = chosen.map((b, i) => ({ path: b.path, content: contents[i] ?? "", size: b.size ?? (contents[i] ?? "").length })).filter((f) => f.content);
     const manifestPaths = allPaths.filter((p) => MANIFESTS.includes(p));
     const manifestContents = await pool(manifestPaths, 6, raw);
     const manifests: Record<string, string> = {};
-    manifestPaths.forEach((p, i) => (manifests[p] = manifestContents[i].slice(0, 20_000)));
+    manifestPaths.forEach((p, i) => (manifests[p] = (manifestContents[i] ?? "").slice(0, 20_000)));
     return {
       owner, repo, branch, sha,
       description: meta.description, stars: meta.stargazers_count, forks: meta.forks_count,

@@ -183,7 +183,7 @@ export function buildGraph(files: SourceFile[]): { edges: GraphEdge[]; externalD
       const target = resolveImport(f.path, spec, fileSet);
       if (target && target !== f.path) edges.push({ from: f.path, to: target, kind: isTestFile(f.path) ? "TESTS" : "IMPORTS" });
       else if (!target && !spec.startsWith(".")) {
-        const pkg = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split(/[/.]/)[0];
+        const pkg = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : (spec.split(/[/.]/)[0] ?? spec);
         externalDeps[pkg] = (externalDeps[pkg] ?? 0) + 1;
       }
     }

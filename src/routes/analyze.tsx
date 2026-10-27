@@ -12,7 +12,7 @@ import {
 const GraphView = lazy(() => import("@/components/GraphView"));
 
 export const Route = createFileRoute("/analyze")({
-  validateSearch: (s: Record<string, unknown>) => ({ repo: typeof s.repo === "string" ? s.repo : "" }),
+  validateSearch: (s: Record<string, unknown>) => ({ repo: typeof s["repo"] === "string" ? s["repo"] : "" }),
   head: () => ({
     meta: [
       { title: "Repository analysis — RepoLens AI" },
@@ -55,7 +55,7 @@ function detectFrameworks(s: RepoSnapshot): string[] {
     } catch { /* invalid package.json */ }
   }
   const py = (s.manifests["requirements.txt"] ?? "") + (s.manifests["pyproject.toml"] ?? "");
-  for (const [k, v] of [["django", "Django"], ["flask", "Flask"], ["fastapi", "FastAPI"], ["pytest", "pytest"], ["sqlalchemy", "SQLAlchemy"]]) if (py.toLowerCase().includes(k)) out.add(v);
+  for (const [k, v] of [["django", "Django"], ["flask", "Flask"], ["fastapi", "FastAPI"], ["pytest", "pytest"], ["sqlalchemy", "SQLAlchemy"]] as const) if (py.toLowerCase().includes(k)) out.add(v);
   if (s.manifests["pom.xml"]?.includes("spring-boot")) out.add("Spring Boot");
   if (s.manifests["go.mod"]) out.add("Go modules");
   if (s.manifests["Dockerfile"]) out.add("Docker");
@@ -77,7 +77,7 @@ function AnalyzePage() {
   });
   const a = useAnalysis(q.data);
   const [tab, setTab] = useState<Tab>("overview");
-  const [open, setOpen] = useState<{ path: string; line?: number } | null>(null);
+  const [open, setOpen] = useState<{ path: string; line?: number | undefined } | null>(null);
 
   useEffect(() => {
     if (!q.data) return;
@@ -145,7 +145,7 @@ function Loading() {
 }
 
 type A = NonNullable<ReturnType<typeof useAnalysis>>;
-type OpenFn = (o: { path: string; line?: number }) => void;
+type OpenFn = (o: { path: string; line?: number | undefined }) => void;
 
 function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -394,9 +394,9 @@ function Answer({ text, onOpen }: { text: string; onOpen: OpenFn }) {
     <div className="mt-4 space-y-1.5 text-sm leading-relaxed">
       {text.split("\n").map((line, i) => {
         const h = line.match(/^#{1,4}\s+(.*)/);
-        const content = (h ? h[1] : line).split(/(\[[^\]\s]+:\d+(?:-\d+)?\]|\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
+        const content = ((h ? h[1] : line) ?? "").split(/(\[[^\]\s]+:\d+(?:-\d+)?\]|\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
           const c = part.match(/^\[([^\]\s]+):(\d+)(?:-\d+)?\]$/);
-          if (c) return <button key={j} onClick={() => onOpen({ path: c[1], line: Number(c[2]) })} className="mx-0.5 rounded bg-muted px-1 font-mono text-xs text-primary hover:underline">{c[1].split("/").pop()}:{c[2]}</button>;
+          if (c && c[1] && c[2]) return <button key={j} onClick={() => onOpen({ path: c[1], line: Number(c[2]) })} className="mx-0.5 rounded bg-muted px-1 font-mono text-xs text-primary hover:underline">{c[1].split("/").pop()}:{c[2]}</button>;
           if (part.startsWith("**")) return <strong key={j}>{part.slice(2, -2)}</strong>;
           if (part.startsWith("`")) return <code key={j} className="rounded bg-muted px-1 font-mono text-xs">{part.slice(1, -1)}</code>;
           return part;
@@ -409,7 +409,7 @@ function Answer({ text, onOpen }: { text: string; onOpen: OpenFn }) {
   );
 }
 
-function CodeViewer({ s, path, line, onClose }: { s: RepoSnapshot; path: string; line?: number; onClose: () => void }) {
+function CodeViewer({ s, path, line, onClose }: { s: RepoSnapshot; path: string; line?: number | undefined; onClose: () => void }) {
   const file = s.files.find((f) => f.path === path);
   useEffect(() => {
     if (line) document.getElementById(`L${line}`)?.scrollIntoView({ block: "center" });
