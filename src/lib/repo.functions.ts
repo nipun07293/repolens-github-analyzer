@@ -101,3 +101,13 @@ export const analyzeRepo = createServerFn({ method: "POST" })
       files, skipped: candidates.length - files.length, fetchMs: Date.now() - t0, manifests,
     };
   });
+
+export const listUserRepos = createServerFn({ method: "POST" })
+  .inputValidator((input: { user: string }) => {
+    if (!/^[A-Za-z0-9-]{1,39}$/.test(input?.user ?? "")) throw new Error("Invalid GitHub username");
+    return input;
+  })
+  .handler(async ({ data }) => {
+    const repos = (await gh(`users/${data.user}/repos?per_page=100&sort=updated`)) as Array<{ name: string; description: string | null; language: string | null; stargazers_count: number; fork: boolean }>;
+    return repos.map((r) => ({ name: r.name, description: r.description, language: r.language, stars: r.stargazers_count, fork: r.fork }));
+  });
