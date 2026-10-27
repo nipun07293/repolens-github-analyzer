@@ -1,6 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { parseRepoUrl } from "@/lib/analyzer/core";
+import { listUserRepos } from "@/lib/repo.functions";
+
+function parseUser(input: string): string | null {
+  const m = input.trim().replace(/\/+$/, "").match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9-]{1,39})$/) ?? input.trim().match(/^@?([A-Za-z0-9-]{1,39})$/);
+  return m?.[1] ?? null;
+}
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,9 +29,27 @@ function Index() {
   const [url, setUrl] = useState("");
   const [err, setErr] = useState("");
   const navigate = useNavigate();
-  const go = (u: string) => {
+  const listRepos = useServerFn(listUserRepos);
+  const [user, setUser] = useState<{ name: string; repos: Awaited<ReturnType<typeof listUserRepos>> } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const go = async (u: string) => {
     const p = parseRepoUrl(u);
-    if (!p) return setErr("Enter a GitHub repo like github.com/owner/repo");
+    if (!p) {
+      const name = parseUser(u);
+      if (!name) return setErr("Enter a GitHub repo like github.com/owner/repo, or a profile like github.com/owner");
+      setLoading(true);
+      setUser(null);
+      try {
+        const repos = await listRepos({ data: { user: name } });
+        if (!repos.length) setErr(`${name} has no public repositories.`);
+        else setUser({ name, repos });
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     navigate({ to: "/analyze", search: { repo: `${p.owner}/${p.repo}` } });
   };
   return (
@@ -50,12 +75,30 @@ function Index() {
               setUrl(e.target.value);
               setErr("");
             }}
-            placeholder="github.com/owner/repo"
+            placeholder="github.com/owner/repo or github.com/owner"
             className="flex-1 rounded-md border border-input bg-card px-4 py-3 font-mono text-sm outline-none focus:border-primary"
           />
           <button className="glow-primary rounded-md bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90">Analyze repo</button>
         </form>
         {err && <p className="mt-2 text-sm text-destructive">{err}</p>}
+        {loading && <p className="mt-2 animate-pulse font-mono text-sm text-muted-foreground">› listing repositories…</p>}
+        {user && (
+          <div className="mt-4 rounded-lg border border-border bg-card p-3">
+            <p className="px-2 pb-2 text-sm text-muted-foreground">That's a profile — pick one of <span className="text-foreground">{user.name}</span>'s repositories:</p>
+            <ul className="max-h-80 overflow-auto">
+              {user.repos.map((r) => (
+                <li key={r.name}>
+                  <button onClick={() => go(`${user.name}/${r.name}`)} className="flex w-full items-center gap-3 rounded px-2 py-2 text-left hover:bg-muted">
+                    <span className="font-mono text-sm text-primary">{r.name}</span>
+                    {r.fork && <span className="text-xs text-muted-foreground">fork</span>}
+                    <span className="truncate text-xs text-muted-foreground">{r.description}</span>
+                    <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{r.language} ★{r.stars}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="mt-4 flex flex-wrap gap-2 font-mono text-xs">
           <span className="text-muted-foreground">try:</span>
           {EXAMPLES.map((e) => (
