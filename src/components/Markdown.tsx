@@ -2,9 +2,10 @@ type OpenFn = (o: { path: string; line?: number | undefined }) => void;
 
 /** Minimal markdown renderer that turns [path:start-end] citations into clickable code links. */
 export function Markdown({ text, onOpen }: { text: string; onOpen: OpenFn }) {
+  const parts = text.split(/```[a-z]*\n?/);
   return (
     <div className="mt-4 space-y-1.5 text-sm leading-relaxed">
-      {text.split("\n").map((line, i) => {
+      {parts.map((block, bi) => bi % 2 === 1 ? <pre key={bi} className="overflow-auto rounded bg-muted p-3 font-mono text-xs">{block.trim()}</pre> : block.split("\n").map((line, i) => {
         const h = line.match(/^#{1,4}\s+(.*)/);
         const li = !h && line.match(/^\s*(?:[-*]|\d+\.)\s+(.*)/);
         const body = (h ? h[1] : li ? li[1] : line) ?? "";
@@ -19,7 +20,7 @@ export function Markdown({ text, onOpen }: { text: string; onOpen: OpenFn }) {
         if (li) return <p key={i} className="flex gap-2 pl-2"><span className="text-accent">›</span><span>{content}</span></p>;
         if (!line.trim()) return <div key={i} className="h-1" />;
         return <p key={i}>{content}</p>;
-      })}
+      }))}
     </div>
   );
 }
