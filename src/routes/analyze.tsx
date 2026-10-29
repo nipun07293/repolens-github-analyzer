@@ -4,6 +4,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { analyzeRepo, type RepoSnapshot } from "@/lib/repo.functions";
 import { askRepo } from "@/lib/ask.functions";
+import { Markdown, ModelPicker } from "@/components/Markdown";
+import { Explain, Agent, repoFacts } from "@/components/RepoAI";
+import { useHealth, HealthBadge } from "@/components/Insights";
+const Insights = lazy(() => import("@/components/Insights"));
 import {
   extractSymbols, buildGraph, detectFindings, impactOf, findCycles, chunkFiles, bm25Search, isTestFile, tokenize,
   type CodeSymbol, type Finding,
@@ -26,7 +30,8 @@ export const Route = createFileRoute("/analyze")({
   component: AnalyzePage,
 });
 
-type Tab = "overview" | "files" | "graph" | "findings" | "impact" | "ask";
+type Tab = "overview" | "explain" | "insights" | "files" | "graph" | "findings" | "impact" | "ask" | "agent";
+const TAB_LABEL: Record<Tab, string> = { overview: "Overview", explain: "Explain (simple)", insights: "Insights", files: "Symbols", graph: "Graph", findings: "Findings", impact: "Impact", ask: "Ask AI", agent: "Agent" };
 
 function useAnalysis(snap: RepoSnapshot | undefined) {
   return useMemo(() => {
@@ -78,6 +83,8 @@ function AnalyzePage() {
   const a = useAnalysis(q.data);
   const [tab, setTab] = useState<Tab>("overview");
   const [open, setOpen] = useState<{ path: string; line?: number | undefined } | null>(null);
+  const health = useHealth({ findings: a?.findings ?? [], loc: a?.loc ?? 0, files: q.data?.files ?? [], allPaths: q.data?.allPaths ?? [], cycles: a?.cycles ?? [], edges: a?.edges ?? [] });
+  const facts = useMemo(() => (q.data && a ? repoFacts(q.data, a, health) : ""), [q.data, a, health]);
 
   useEffect(() => {
     if (!q.data) return;
@@ -97,9 +104,9 @@ function AnalyzePage() {
         </div>
         {a && (
           <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-6">
-            {(["overview", "files", "graph", "findings", "impact", "ask"] as Tab[]).map((t) => (
+            {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
               <button key={t} onClick={() => setTab(t)} className={`border-b-2 px-3 py-2 text-sm capitalize ${tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-                {t === "ask" ? "Ask AI" : t}
+                {TAB_LABEL[t]}
                 {t === "findings" && <span className="ml-1 text-xs">({a.findings.length})</span>}
               </button>
             ))}
@@ -117,7 +124,14 @@ function AnalyzePage() {
         {!repo && <p>No repository selected. <Link to="/" className="text-primary">Go back</Link></p>}
         {q.data && a && (
           <>
-            {tab === "overview" && <Overview s={q.data} a={a} />}
+            {tab === "overview" && <Overview s={q.data} a={a} health={<HealthBadge score={health} />} />}
+            {tab === "explain" && <Explain s={q.data} a={a} facts={facts} onOpen={setOpen} />}
+            {tab === "agent" && <Agent s={q.data} a={a} facts={facts} onOpen={setOpen} />}
+            {tab === "insights" && (
+              <Suspense fallback={<Loading />}>
+                <Insights files={q.data.files} allPaths={q.data.allPaths} languages={q.data.languages} symbols={a.symbols} findings={a.findings} edges={a.edges} cycles={a.cycles} loc={a.loc} onOpen={setOpen} />
+              </Suspense>
+            )}
             {tab === "files" && <Files s={q.data} symbols={a.symbols} onOpen={setOpen} />}
             {tab === "graph" && (
               <Suspense fallback={<Loading />}>
@@ -156,7 +170,7 @@ function Stat({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-function Overview({ s, a }: { s: RepoSnapshot; a: A }) {
+function Overview({ s, a, health }: { s: RepoSnapshot; a: A; health: ReactNode }) {
   const langTotal = Object.values(s.languages).reduce((x, y) => x + y, 0) || 1;
   const routes = a.symbols.filter((x) => x.kind === "route");
   const tests = s.allPaths.filter(isTestFile);
@@ -171,6 +185,10 @@ function Overview({ s, a }: { s: RepoSnapshot; a: A }) {
         <h1 className="text-3xl font-bold">{s.owner}/{s.repo}</h1>
         {s.description && <p className="mt-2 text-muted-foreground">{s.description}</p>}
       </div>
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-5">
+        {health}
+        <p className="max-w-sm text-sm text-muted-foreground">New to code? Open <strong className="text-foreground">Explain (simple)</strong> for a plain-language guide, <strong className="text-foreground">Insights</strong> for charts, or let the <strong className="text-foreground">Agent</strong> investigate for you.</p>
+      </section>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
         <Stat label="Files in repo" value={s.totalFiles} />
         <Stat label="Files analyzed" value={s.files.length} />
@@ -340,8 +358,9 @@ function Impact({ s, a, onOpen }: { s: RepoSnapshot; a: A; onOpen: OpenFn }) {
 function Ask({ s, a, onOpen }: { s: RepoSnapshot; a: A; onOpen: OpenFn }) {
   const ask = useServerFn(askRepo);
   const [question, setQuestion] = useState("");
-  const [history, setHistory] = useState<Array<{ q: string; answer?: string; error?: string; sources: Array<{ path: string; start: number; end: number }> }>>([]);
+  const [history, setHistory] = useState<Array<{ q: string; answer?: string; error?: string; meta?: string; sources: Array<{ path: string; start: number; end: number }> }>>([]);
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState<"gpt" | "gemini">("gpt");
   const submit = async (qText: string) => {
     if (!qText.trim() || busy) return;
     const chunks = bm25Search(a.chunks, qText, 8);
@@ -353,8 +372,8 @@ function Ask({ s, a, onOpen }: { s: RepoSnapshot; a: A; onOpen: OpenFn }) {
     setQuestion("");
     try {
       if (!chunks.length) throw new Error("No matching code found for those words. Try naming a feature, file or function.");
-      const r = await ask({ data: { question: qText, repo: `${s.owner}/${s.repo}`, sha: s.sha, symbols: syms, chunks: chunks.map(({ path, start, end, text }) => ({ path, start, end, text })) } });
-      setHistory((h) => h.map((x, i) => (i === 0 ? { ...x, answer: r.answer } : x)));
+      const r = await ask({ data: { question: qText, repo: `${s.owner}/${s.repo}`, sha: s.sha, symbols: syms, chunks: chunks.map(({ path, start, end, text }) => ({ path, start, end, text })), model } });
+      setHistory((h) => h.map((x, i) => (i === 0 ? { ...x, answer: r.answer, meta: `${r.model} · ${(r.ms / 1000).toFixed(1)}s` } : x)));
     } catch (e) {
       setHistory((h) => h.map((x, i) => (i === 0 ? { ...x, error: (e as Error).message } : x)));
     } finally {
@@ -368,7 +387,8 @@ function Ask({ s, a, onOpen }: { s: RepoSnapshot; a: A; onOpen: OpenFn }) {
         <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Where is authentication implemented?" className="flex-1 rounded-md border border-input bg-card px-4 py-3 text-sm outline-none focus:border-primary" />
         <button disabled={busy} className="rounded-md bg-primary px-5 font-semibold text-primary-foreground disabled:opacity-50">{busy ? "Thinking…" : "Ask"}</button>
       </form>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ModelPicker value={model} onChange={setModel} />
         {SUGG.map((x) => <button key={x} onClick={() => submit(x)} className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-primary hover:text-primary">{x}</button>)}
       </div>
       <div className="mt-8 space-y-6">
@@ -380,31 +400,11 @@ function Ask({ s, a, onOpen }: { s: RepoSnapshot; a: A; onOpen: OpenFn }) {
             </div>
             {h.error && <p className="mt-3 text-sm text-destructive">{h.error}</p>}
             {!h.answer && !h.error && <p className="mt-3 animate-pulse text-sm text-muted-foreground">Reading {h.sources.length} excerpts…</p>}
-            {h.answer && <Answer text={h.answer} onOpen={onOpen} />}
-            <p className="mt-3 font-mono text-xs text-muted-foreground">commit {s.sha.slice(0, 7)} · statically inferred</p>
+            {h.answer && <Markdown text={h.answer} onOpen={onOpen} />}
+            <p className="mt-3 font-mono text-xs text-muted-foreground">{h.meta && `${h.meta} · `}commit {s.sha.slice(0, 7)} · statically inferred</p>
           </article>
         ))}
       </div>
-    </div>
-  );
-}
-
-function Answer({ text, onOpen }: { text: string; onOpen: OpenFn }) {
-  return (
-    <div className="mt-4 space-y-1.5 text-sm leading-relaxed">
-      {text.split("\n").map((line, i) => {
-        const h = line.match(/^#{1,4}\s+(.*)/);
-        const content = ((h ? h[1] : line) ?? "").split(/(\[[^\]\s]+:\d+(?:-\d+)?\]|\*\*[^*]+\*\*|`[^`]+`)/g).map((part, j) => {
-          const c = part.match(/^\[([^\]\s]+):(\d+)(?:-\d+)?\]$/);
-          if (c && c[1] && c[2]) return <button key={j} onClick={() => onOpen({ path: c[1]!, line: Number(c[2]) })} className="mx-0.5 rounded bg-muted px-1 font-mono text-xs text-primary hover:underline">{c[1].split("/").pop()}:{c[2]}</button>;
-          if (part.startsWith("**")) return <strong key={j}>{part.slice(2, -2)}</strong>;
-          if (part.startsWith("`")) return <code key={j} className="rounded bg-muted px-1 font-mono text-xs">{part.slice(1, -1)}</code>;
-          return part;
-        });
-        if (h) return <h3 key={i} className="pt-2 font-semibold text-primary">{content}</h3>;
-        if (!line.trim()) return <div key={i} className="h-1" />;
-        return <p key={i}>{content}</p>;
-      })}
     </div>
   );
 }
