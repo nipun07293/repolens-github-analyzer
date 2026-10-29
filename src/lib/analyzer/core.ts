@@ -347,3 +347,61 @@ export function bm25Search(chunks: Chunk[], query: string, k = 8): Array<Chunk &
   });
   return scored.filter((c) => c.score > 0).sort((a, b) => b.score - a.score).slice(0, k);
 }
+
+// ---------- Health scoring & structure stats (pure) ----------
+
+export interface HealthScore {
+  overall: number;
+  parts: { security: number; reliability: number; maintainability: number; testing: number; modularity: number };
+  grade: "A" | "B" | "C" | "D" | "F";
+}
+
+/** Weighted 0-100 score. Penalties are normalised per 1k lines so big repos aren't punished for size. */
+export function healthScore(input: { findings: Finding[]; loc: number; files: number; testFiles: number; cycles: number; edges: number }): HealthScore {
+  const kloc = Math.max(1, input.loc / 1000);
+  const count = (cat: Finding["category"], sev?: Finding["severity"]) => input.findings.filter((f) => f.category === cat && (!sev || f.severity === sev)).length;
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  const security = clamp(100 - ((count("security", "high") * 15 + count("security", "medium") * 5) / kloc));
+  const reliability = clamp(100 - ((count("bug-risk", "medium") * 6 + count("bug-risk", "low") * 1.5) / kloc));
+  const maintainability = clamp(100 - (count("maintainability") * 2) / kloc);
+  const ratio = input.files ? input.testFiles / input.files : 0;
+  const testing = clamp(Math.min(1, ratio / 0.3) * 100);
+  const modularity = clamp(100 - input.cycles * 12 - (input.files > 5 && input.edges === 0 ? 30 : 0));
+  const overall = clamp(security * 0.3 + reliability * 0.2 + maintainability * 0.15 + testing * 0.2 + modularity * 0.15);
+  const grade = overall >= 85 ? "A" : overall >= 70 ? "B" : overall >= 55 ? "C" : overall >= 40 ? "D" : "F";
+  return { overall, parts: { security, reliability, maintainability, testing, modularity }, grade };
+}
+
+/** Group files by top-level folder with line counts (for treemaps). */
+export function dirStats(files: SourceFile[], depth = 1): Array<{ dir: string; files: number; lines: number }> {
+  const m = new Map<string, { files: number; lines: number }>();
+  for (const f of files) {
+    const parts = f.path.split("/");
+    const dir = parts.length > depth ? parts.slice(0, depth).join("/") : "(root)";
+    const cur = m.get(dir) ?? { files: 0, lines: 0 };
+    cur.files++;
+    cur.lines += f.content.split("\n").length;
+    m.set(dir, cur);
+  }
+  return [...m.entries()].map(([dir, v]) => ({ dir, ...v })).sort((a, b) => b.lines - a.lines);
+}
+
+/** Pull the first JSON object out of an LLM reply (handles ```json fences and prose around it). */
+export function extractJson<T = unknown>(text: string): T | null {
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i]!;
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') inStr = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) {
+      try { return JSON.parse(text.slice(start, i + 1)) as T; } catch { return null; }
+    }
+  }
+  return null;
+}
