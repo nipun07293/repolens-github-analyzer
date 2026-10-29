@@ -11,3 +11,5 @@
 
 - Code analysis (symbols, import graph, findings, impact BFS, BM25 retrieval) lives as pure functions in src/lib/analyzer/core.ts with unit tests; keeps it deterministic and interview-defensible.
 - GitHub fetching and AI calls run in server functions (src/lib/*.functions.ts); AI only receives retrieved excerpts so answers cite real file:line ranges.
+- LLM calls go through runModel(model) in src/lib/ai.server.ts (GPT on Responses, Gemini on Chat Completions); one place to swap models.
+- The Investigator agent is a client-orchestrated ReAct loop: the server function only picks the next tool as JSON, tools run locally on the snapshot via core.ts, so every observation is real.
