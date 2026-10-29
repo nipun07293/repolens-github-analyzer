@@ -36,3 +36,24 @@ describe("analyzer", () => {
     expect(top[0]!.path).toBe("auth.ts");
   });
 });
+
+import { healthScore, dirStats, extractJson } from "./core";
+describe("health & helpers", () => {
+  it("scores a clean, tested repo highly and a risky one low", () => {
+    const clean = healthScore({ findings: [], loc: 2000, files: 10, testFiles: 3, cycles: 0, edges: 12 });
+    expect(clean.overall).toBe(100);
+    expect(clean.grade).toBe("A");
+    const hi = { rule: "eval-usage", severity: "high" as const, category: "security" as const, path: "a.js", line: 1, message: "", snippet: "" };
+    const risky = healthScore({ findings: Array(10).fill(hi), loc: 1000, files: 10, testFiles: 0, cycles: 2, edges: 5 });
+    expect(risky.parts.security).toBe(0);
+    expect(risky.parts.testing).toBe(0);
+    expect(risky.overall).toBeLessThan(55);
+  });
+  it("groups lines by folder", () => {
+    expect(dirStats([f("src/a.ts", "1\n2"), f("src/b.ts", "1"), f("x.ts", "1")])).toEqual([{ dir: "src", files: 2, lines: 3 }, { dir: "(root)", files: 1, lines: 1 }]);
+  });
+  it("extracts JSON from fenced LLM output", () => {
+    expect(extractJson('sure:\n```json\n{"action":"read","input":"a {b}"}\n```')).toEqual({ action: "read", input: "a {b}" });
+    expect(extractJson("no json")).toBeNull();
+  });
+});
