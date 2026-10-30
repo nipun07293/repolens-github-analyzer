@@ -105,7 +105,7 @@ function AnalyzePage() {
           <Link to="/" className="font-mono text-sm font-semibold text-primary">repolens</Link>
           <span className="font-mono text-sm">{repo}</span>
           {q.data && <span className="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">{q.data.branch}@{q.data.sha.slice(0, 7)}</span>}
-          {q.data && <button onClick={() => q.refetch()} className="ml-auto text-xs text-muted-foreground hover:text-primary">Reanalyze</button>}
+          {q.data && <button onClick={() => { fresh.current = true; q.refetch(); }} className="ml-auto text-xs text-muted-foreground hover:text-primary">Reanalyze</button>}
         </div>
         {a && (
           <nav className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-6">
