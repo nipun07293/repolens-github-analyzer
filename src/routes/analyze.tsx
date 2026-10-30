@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { analyzeRepo, type RepoSnapshot } from "@/lib/repo.functions";
 import { askRepo } from "@/lib/ask.functions";
 import { Markdown, ModelPicker } from "@/components/Markdown";
@@ -73,9 +73,14 @@ function AnalyzePage() {
   const analyze = useServerFn(analyzeRepo);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const fresh = useRef(false);
   const q = useQuery({
     queryKey: ["repo", repo],
-    queryFn: () => analyze({ data: { url: repo } }),
+    queryFn: () => {
+      const f = fresh.current;
+      fresh.current = false;
+      return analyze({ data: { url: repo, fresh: f } });
+    },
     enabled: mounted && !!repo,
     staleTime: Infinity,
     retry: false,
@@ -195,9 +200,9 @@ function Overview({ s, a, health }: { s: RepoSnapshot; a: A; health: ReactNode }
         <Stat label="Lines analyzed" value={a.loc.toLocaleString()} />
         <Stat label="Symbols" value={a.symbols.length} />
         <Stat label="Dep. edges" value={a.edges.length} />
-        <Stat label="Stars" value={s.stars.toLocaleString()} />
+        <Stat label="Stars" value={s.source === "archive" ? "—" : s.stars.toLocaleString()} />
       </div>
-      <p className="font-mono text-xs text-muted-foreground">fetch {s.fetchMs}ms · analysis {a.analyzeMs}ms · commit {s.sha} {s.license && `· ${s.license}`}</p>
+      <p className="font-mono text-xs text-muted-foreground">fetch {s.fetchMs}ms · analysis {a.analyzeMs}ms · commit {s.sha} {s.license && `· ${s.license}`} {s.source === "archive" && "· loaded from archive (GitHub API busy, stars/forks unavailable)"}</p>
       <div className="grid gap-6 md:grid-cols-2">
         <section className="rounded-lg border border-border p-5">
           <h2 className="font-semibold">Languages</h2>
